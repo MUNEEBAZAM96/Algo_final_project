@@ -1,6 +1,10 @@
 /**
- * Core Algorithms for Disaster Relief Optimization - C++ Implementation
- * Implements Dijkstra, A*, Dynamic Programming, and Greedy algorithms
+ * algorithms.h - Graph algorithms for routing
+ * 
+ * This module implements:
+ * - Dijkstra's algorithm for shortest paths
+ * - A* search algorithm with heuristic
+ * - 2-opt route optimization
  */
 
 #ifndef ALGORITHMS_H
@@ -9,139 +13,188 @@
 #include "graph.h"
 #include <vector>
 #include <unordered_map>
-#include <limits>
 #include <queue>
-#include <functional>
+#include <limits>
+#include <algorithm>
+#include <cmath>
 
 using namespace std;
 
-namespace DisasterRelief {
+/**
+ * Dijkstra's Algorithm
+ * Time Complexity: O((V + E) log V) using priority queue
+ * Returns: unordered_map of minimum distances from source to all reachable nodes
+ */
+unordered_map<int, double> dijkstra(const Graph& graph, int source) {
+    unordered_map<int, double> distMap;
+    unordered_map<int, bool> visited;
+    
+    // Initialize distances to infinity for all nodes
+    for (int nodeId : graph.getAllNodeIds()) {
+        distMap[nodeId] = numeric_limits<double>::max();
+        visited[nodeId] = false;
+    }
+    distMap[source] = 0.0;
+    
+    // Priority queue: (distance, node_id) - smaller distance has higher priority
+    priority_queue<pair<double, int>, 
+                   vector<pair<double, int>>,
+                   greater<pair<double, int>>> pq;
+    pq.push({0.0, source});
+    
+    while (!pq.empty()) {
+        int u = pq.top().second;
+        pq.pop();
+        
+        // Skip if already visited
+        if (visited[u]) continue;
+        visited[u] = true;
+        
+        // Check all neighbors of current node
+        for (const auto& neighbor : graph.getNeighbors(u)) {
+            int v = neighbor.first;
+            double edgeCost = neighbor.second.cost;
+            
+            // Update distance if we found a shorter path
+            if (!visited[v] && distMap[u] + edgeCost < distMap[v]) {
+                distMap[v] = distMap[u] + edgeCost;
+                pq.push({distMap[v], v});
+            }
+        }
+    }
+    
+    return distMap;
+}
 
 /**
- * Shortest Path Algorithms
+ * A* Search Algorithm
+ * Time Complexity: O((V + E) log V) in worst case
+ * Heuristic: simple absolute difference |a - b|
+ * Returns: path from source to target, or empty vector if no path exists
  */
-class ShortestPathAlgorithms {
-public:
-    /**
-     * Dijkstra's algorithm for shortest paths from source to all nodes
-     * Time Complexity: O((V + E) log V)
-     * Space Complexity: O(V)
-     */
-    static pair<unordered_map<int, double>, unordered_map<int, int>>
-    dijkstra(const Graph& graph, int source, bool useReliability = true);
+vector<int> astar(const Graph& graph, int source, int target) {
+    unordered_map<int, double> gScore;  // Cost from start to this node
+    unordered_map<int, double> fScore;  // gScore + heuristic (total estimated cost)
+    unordered_map<int, int> cameFrom;   // For path reconstruction
+    unordered_map<int, bool> visited;
     
-    /**
-     * Reconstruct path from parent pointers
-     */
-    static vector<int> reconstructPath(
-        const unordered_map<int, int>& parents,
-        int start, int goal
-    );
+    // Initialize scores to infinity
+    for (int nodeId : graph.getAllNodeIds()) {
+        gScore[nodeId] = numeric_limits<double>::max();
+        fScore[nodeId] = numeric_limits<double>::max();
+        visited[nodeId] = false;
+    }
     
-    /**
-     * Calculate Euclidean distance heuristic
-     */
-    static double euclideanDistance(const Graph& graph, int node1, int node2);
+    // Start node has zero cost from start
+    gScore[source] = 0.0;
+    fScore[source] = abs(source - target); // Simple heuristic: |source - target|
     
-    /**
-     * A* search algorithm for optimal path with heuristic
-     * Time Complexity: O(E log V) with good heuristic
-     * Space Complexity: O(V)
-     */
-    static pair<vector<int>, double>
-    aStar(const Graph& graph, int start, int goal);
-};
+    // Priority queue: (fScore, node_id)
+    priority_queue<pair<double, int>,
+                   vector<pair<double, int>>,
+                   greater<pair<double, int>>> pq;
+    pq.push({fScore[source], source});
+    
+    while (!pq.empty()) {
+        int current = pq.top().second;
+        pq.pop();
+        
+        if (visited[current]) continue;
+        visited[current] = true;
+        
+        // If we reached the target, reconstruct and return path
+        if (current == target) {
+            vector<int> path;
+            int node = target;
+            while (node != -1) {
+                path.push_back(node);
+                auto it = cameFrom.find(node);
+                node = (it != cameFrom.end()) ? it->second : -1;
+            }
+            reverse(path.begin(), path.end());
+            return path;
+        }
+        
+        // Check all neighbors
+        for (const auto& neighbor : graph.getNeighbors(current)) {
+            int v = neighbor.first;
+            double edgeCost = neighbor.second.cost;
+            double tentativeGScore = gScore[current] + edgeCost;
+            
+            // If we found a better path to neighbor, update it
+            if (tentativeGScore < gScore[v]) {
+                cameFrom[v] = current;
+                gScore[v] = tentativeGScore;
+                fScore[v] = gScore[v] + abs(v - target); // Heuristic
+                pq.push({fScore[v], v});
+            }
+        }
+    }
+    
+    return {}; // No path found
+}
 
 /**
- * Dynamic Programming Algorithms
+ * 2-Opt Route Optimization
+ * Time Complexity: O(n^2) per iteration, typically converges quickly
+ * Improves route by reversing segments when it reduces total cost
+ * Returns: optimized route
  */
-class DynamicProgramming {
-public:
-    /**
-     * 0/1 Knapsack for selecting optimal locations given capacity constraint
-     * Time Complexity: O(n × C) where n = number of locations, C = capacity
-     * Space Complexity: O(n × C)
-     */
-    static pair<vector<int>, int>
-    knapsackCapacityOptimization(
-        const vector<int>& locations,
-        const Graph& graph,
-        int capacity
-    );
-};
-
-/**
- * Greedy Algorithms
- */
-class GreedyAlgorithms {
-public:
-    /**
-     * Greedy route construction based on priority and distance
-     * Time Complexity: O(K × V²) where K = vehicles, V = nodes
-     * Space Complexity: O(K × V)
-     */
-    static unordered_map<int, vector<int>>
-    priorityGreedyRouting(
-        const Graph& graph,
-        vector<Vehicle>& vehicles,
-        int depot
-    );
+vector<int> twoOpt(const Graph& graph, const vector<int>& route) {
+    // Routes with 3 or fewer nodes can't be optimized
+    if (route.size() <= 3) return route;
     
-    /**
-     * Nearest neighbor heuristic for TSP-like route ordering
-     * Time Complexity: O(V²)
-     * Space Complexity: O(V)
-     */
-    static vector<int>
-    nearestNeighborTSP(
-        const Graph& graph,
-        const vector<int>& locations,
-        int start
-    );
-};
-
-/**
- * Multi-Objective Optimization
- */
-class MultiObjectiveOptimization {
-public:
-    /**
-     * Calculate multi-objective score for a route
-     * Minimize: α × Σ(priority × time) + β × Σ(1 - reliability) + γ × idle_penalty
-     */
-    static double calculateRouteScore(
-        const Graph& graph,
-        const vector<int>& route,
-        double alpha = 1.0,
-        double beta = 1.0,
-        double gamma = 1.0
-    );
+    vector<int> bestRoute = route;
+    bool improved = true;
     
-    /**
-     * Solution evaluation metrics
-     */
-    struct SolutionMetrics {
-        double totalScore;
-        double totalDistance;
-        int locationsServed;
-        int totalPriority;
-        unordered_map<int, vector<int>> routes;
-    };
+    // Keep trying improvements until no improvement is found
+    while (improved) {
+        improved = false;
+        
+        // Try all possible segment reversals
+        for (int i = 1; i < (int)bestRoute.size() - 2; i++) {
+            for (int j = i + 1; j < (int)bestRoute.size() - 1; j++) {
+                // Calculate current route cost
+                double currentCost = 0.0;
+                bool currentValid = true;
+                for (int k = 0; k < (int)bestRoute.size() - 1; k++) {
+                    double cost = graph.getEdgeCost(bestRoute[k], bestRoute[k + 1]);
+                    if (cost < 0) {
+                        currentValid = false;
+                        break;
+                    }
+                    currentCost += cost;
+                }
+                if (!currentValid) continue;
+                
+                // Try reversing segment from i to j
+                vector<int> newRoute = bestRoute;
+                reverse(newRoute.begin() + i, newRoute.begin() + j + 1);
+                
+                // Calculate new route cost
+                double newCost = 0.0;
+                bool valid = true;
+                for (int k = 0; k < (int)newRoute.size() - 1; k++) {
+                    double cost = graph.getEdgeCost(newRoute[k], newRoute[k + 1]);
+                    if (cost < 0) {
+                        valid = false;
+                        break;
+                    }
+                    newCost += cost;
+                }
+                
+                // If new route is better, use it
+                if (valid && newCost < currentCost) {
+                    bestRoute = newRoute;
+                    improved = true;
+                    break;
+                }
+            }
+            if (improved) break;
+        }
+    }
     
-    /**
-     * Comprehensive evaluation of a solution
-     */
-    static SolutionMetrics evaluateSolution(
-        const Graph& graph,
-        const unordered_map<int, vector<int>>& routes,
-        const vector<Vehicle>& vehicles,
-        double alpha = 1.0,
-        double beta = 1.0,
-        double gamma = 1.0
-    );
-};
-
-} // namespace DisasterRelief
+    return bestRoute;
+}
 
 #endif // ALGORITHMS_H
-

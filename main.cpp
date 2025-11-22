@@ -1,158 +1,342 @@
 /**
- * Main Entry Point for Disaster Relief Optimization System - C++ Implementation
+ * main.cpp - Disaster Response Routing & Resource Allocation System
+ * 
+ * This program:
+ * 1. Loads graph data from input.json
+ * 2. Allocates locations to vehicles using priority-based greedy algorithm
+ * 3. Optimizes routes using 2-opt
+ * 4. Computes costs using multi-objective function
+ * 5. Outputs results to console and output.json
+ * 
+ * Compile: g++ -std=c++17 main.cpp -o disaster_relief
+ * Run: ./disaster_relief
  */
 
 #include "graph.h"
-#include "solver.h"
-#include "benchmark.h"
+#include "algorithms.h"
+#include "Allocation.h"
+#include "Utils.h"
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <string>
+#include <iomanip>
 
 using namespace std;
-using namespace DisasterRelief;
 
-void createSampleDataset(const string& filename = "sample_input.json") {
-    ofstream file(filename);
-    file << R"({
-  "nodes": [
-    {"id": 0, "demand": 0, "priority": 0, "x": 50.0, "y": 50.0},
-    {"id": 1, "demand": 3, "priority": 5, "x": 30.0, "y": 70.0},
-    {"id": 2, "demand": 2, "priority": 3, "x": 70.0, "y": 80.0},
-    {"id": 3, "demand": 4, "priority": 4, "x": 60.0, "y": 40.0},
-    {"id": 4, "demand": 1, "priority": 2, "x": 80.0, "y": 20.0}
-  ],
-  "edges": [
-    {"u": 0, "v": 1, "cost": 4, "reliability": 0.9},
-    {"u": 0, "v": 2, "cost": 6, "reliability": 0.8},
-    {"u": 1, "v": 2, "cost": 2, "reliability": 0.7},
-    {"u": 1, "v": 3, "cost": 5, "reliability": 0.95},
-    {"u": 2, "v": 3, "cost": 3, "reliability": 0.85},
-    {"u": 3, "v": 4, "cost": 4, "reliability": 0.9}
-  ]
-})";
+// Simple JSON parser for loading input
+// For production, consider using nlohmann/json library
+Graph loadGraphFromJSON(const string& filename) {
+    Graph graph;
+    ifstream file(filename);
+    
+    if (!file.is_open()) {
+        throw runtime_error("Cannot open file: " + filename);
+    }
+    
+    string content, line;
+    while (getline(file, line)) {
+        content += line;
+    }
     file.close();
-    cout << "Sample dataset created: " << filename << endl;
-}
-
-void solveSampleProblem() {
-    cout << "\n" << string(70, '=') << endl;
-    cout << "SOLVING SAMPLE PROBLEM FROM PROJECT SPECIFICATION" << endl;
-    cout << string(70, '=') << "\n" << endl;
     
-    createSampleDataset("sample_input.json");
-    Graph graph = Graph::fromJsonFile("sample_input.json");
-    
-    vector<Vehicle> vehicles = {Vehicle(1, 5), Vehicle(2, 6)};
-    
-    DisasterReliefSolver solver(graph, vehicles, 0, 1.0, 0.5, 0.3);
-    auto solution = solver.solve(true);
-    solver.printSolution();
-    solver.exportSolution("sample_output.json");
-}
-
-void runScalabilityAnalysis() {
-    cout << "\n" << string(70, '=') << endl;
-    cout << "RUNNING SCALABILITY ANALYSIS" << endl;
-    cout << string(70, '=') << "\n" << endl;
-    
-    vector<BenchmarkConfig> testConfigs = {
-        {50, 100, 2}, {100, 200, 3}, {250, 500, 5}, {500, 1000, 5}
-    };
-    
-    PerformanceBenchmark benchmark;
-    benchmark.runBenchmark(testConfigs, 2);
-    benchmark.printResults();
-    benchmark.analyzeComplexity();
-    benchmark.exportResults("benchmark_results.json");
-}
-
-void testDynamicReplanning() {
-    cout << "\n" << string(70, '=') << endl;
-    cout << "TESTING DYNAMIC REPLANNING" << endl;
-    cout << string(70, '=') << "\n" << endl;
-    
-    Graph graph = DatasetGenerator::generateRandomGraph(20, 40, 100.0);
-    vector<Vehicle> vehicles = {Vehicle(1, 15)};
-    
-    DisasterReliefSolver solver(graph, vehicles, 0);
-    solver.solve(true);
-    cout << "Initial Solution:" << endl;
-    solver.printSolution();
-    
-    const auto& routes = solver.getRoutes();
-    auto it = routes.find(1);
-    if (it != routes.end() && it->second.size() >= 3) {
-        const auto& route = it->second;
-        pair<int, int> blockedEdge = {route[1], route[2]};
-        cout << "\nBlocking edge: (" << blockedEdge.first << ", " << blockedEdge.second << ")" << endl;
-        solver.replanRoute(1, route[1], {blockedEdge});
-        cout << "\nReplanned Solution:" << endl;
-        solver.printSolution();
-    }
-}
-
-void interactiveMenu() {
-    while (true) {
-        cout << "\n" << string(70, '=') << endl;
-        cout << "DISASTER RELIEF OPTIMIZATION SYSTEM (C++)" << endl;
-        cout << string(70, '=') << endl;
-        cout << "\nSelect an option:" << endl;
-        cout << "1. Solve Sample Problem" << endl;
-        cout << "2. Run Scalability Analysis" << endl;
-        cout << "3. Test Dynamic Replanning" << endl;
-        cout << "4. Run All Tests" << endl;
-        cout << "5. Exit" << endl;
-        cout << string(70, '=') << endl;
-        cout << "\nEnter your choice (1-5): ";
+    // Parse nodes
+    int nodesPos = content.find("\"nodes\"");
+    if (nodesPos != string::npos) {
+        int start = content.find('[', nodesPos);
+        int end = content.find(']', start);
+        string nodesStr = content.substr(start + 1, end - start - 1);
         
-        int choice;
-        cin >> choice;
-        
-        switch (choice) {
-            case 1: solveSampleProblem(); break;
-            case 2: runScalabilityAnalysis(); break;
-            case 3: testDynamicReplanning(); break;
-            case 4:
-                cout << "\nRunning all tests...\n" << endl;
-                solveSampleProblem();
-                runScalabilityAnalysis();
-                break;
-            case 5:
-                cout << "\nExiting..." << endl;
-                return;
-            default:
-                cout << "\nInvalid choice. Please try again." << endl;
+        int nodeStart = 0;
+        while ((nodeStart = nodesStr.find('{', nodeStart)) != string::npos) {
+            int nodeEnd = nodesStr.find('}', nodeStart);
+            string nodeStr = nodesStr.substr(nodeStart, nodeEnd - nodeStart + 1);
+            
+            int id = 0, demand = 0, priority = 0;
+            
+            // Extract id
+            int idPos = nodeStr.find("\"id\"");
+            if (idPos != string::npos) {
+                int colon = nodeStr.find(':', idPos);
+                int comma = nodeStr.find_first_of(",}", colon);
+                id = stoi(nodeStr.substr(colon + 1, comma - colon - 1));
+            }
+            
+            // Extract demand
+            int demandPos = nodeStr.find("\"demand\"");
+            if (demandPos != string::npos) {
+                int colon = nodeStr.find(':', demandPos);
+                int comma = nodeStr.find_first_of(",}", colon);
+                demand = stoi(nodeStr.substr(colon + 1, comma - colon - 1));
+            }
+            
+            // Extract priority
+            int priorityPos = nodeStr.find("\"priority\"");
+            if (priorityPos != string::npos) {
+                int colon = nodeStr.find(':', priorityPos);
+                int comma = nodeStr.find_first_of(",}", colon);
+                priority = stoi(nodeStr.substr(colon + 1, comma - colon - 1));
+            }
+            
+            graph.addNode(Node(id, demand, priority));
+            nodeStart = nodeEnd + 1;
         }
-        
-        cout << "\nPress Enter to continue...";
-        cin.ignore();
-        cin.get();
     }
+    
+    // Parse edges
+    int edgesPos = content.find("\"edges\"");
+    if (edgesPos != string::npos) {
+        int start = content.find('[', edgesPos);
+        int end = content.find(']', start);
+        string edgesStr = content.substr(start + 1, end - start - 1);
+        
+        int edgeStart = 0;
+        while ((edgeStart = edgesStr.find('{', edgeStart)) != string::npos) {
+            int edgeEnd = edgesStr.find('}', edgeStart);
+            string edgeStr = edgesStr.substr(edgeStart, edgeEnd - edgeStart + 1);
+            
+            int u = 0, v = 0;
+            double cost = 0.0, reliability = 1.0;
+            
+            // Extract u
+            int uPos = edgeStr.find("\"u\"");
+            if (uPos != string::npos) {
+                int colon = edgeStr.find(':', uPos);
+                int comma = edgeStr.find(',', colon);
+                u = stoi(edgeStr.substr(colon + 1, comma - colon - 1));
+            }
+            
+            // Extract v
+            int vPos = edgeStr.find("\"v\"");
+            if (vPos != string::npos) {
+                int colon = edgeStr.find(':', vPos);
+                int comma = edgeStr.find(',', colon);
+                v = stoi(edgeStr.substr(colon + 1, comma - colon - 1));
+            }
+            
+            // Extract cost
+            int costPos = edgeStr.find("\"cost\"");
+            if (costPos != string::npos) {
+                int colon = edgeStr.find(':', costPos);
+                int comma = edgeStr.find(',', colon);
+                cost = stod(edgeStr.substr(colon + 1, comma - colon - 1));
+            }
+            
+            // Extract reliability
+            int relPos = edgeStr.find("\"reliability\"");
+            if (relPos != string::npos) {
+                int colon = edgeStr.find(':', relPos);
+                int comma = edgeStr.find_first_of(",}", colon);
+                reliability = stod(edgeStr.substr(colon + 1, comma - colon - 1));
+            }
+            
+            graph.addEdge(Edge(u, v, cost, reliability));
+            edgeStart = edgeEnd + 1;
+        }
+    }
+    
+    return graph;
 }
 
-int main(int argc, char* argv[]) {
+// Load vehicles from JSON file
+vector<Vehicle> loadVehiclesFromJSON(const string& filename) {
+    vector<Vehicle> vehicles;
+    ifstream file(filename);
+    
+    if (!file.is_open()) {
+        throw runtime_error("Cannot open file: " + filename);
+    }
+    
+    string content, line;
+    while (getline(file, line)) {
+        content += line;
+    }
+    file.close();
+    
+    // Parse vehicles
+    int vehiclesPos = content.find("\"vehicles\"");
+    if (vehiclesPos != string::npos) {
+        int start = content.find('[', vehiclesPos);
+        int end = content.find(']', start);
+        string vehiclesStr = content.substr(start + 1, end - start - 1);
+        
+        int vehicleStart = 0;
+        while ((vehicleStart = vehiclesStr.find('{', vehicleStart)) != string::npos) {
+            int vehicleEnd = vehiclesStr.find('}', vehicleStart);
+            string vehicleStr = vehiclesStr.substr(vehicleStart, vehicleEnd - vehicleStart + 1);
+            
+            int id = 0, capacity = 0;
+            
+            // Extract id
+            int idPos = vehicleStr.find("\"id\"");
+            if (idPos != string::npos) {
+                int colon = vehicleStr.find(':', idPos);
+                int comma = vehicleStr.find_first_of(",}", colon);
+                id = stoi(vehicleStr.substr(colon + 1, comma - colon - 1));
+            }
+            
+            // Extract capacity
+            int capPos = vehicleStr.find("\"capacity\"");
+            if (capPos != string::npos) {
+                int colon = vehicleStr.find(':', capPos);
+                int comma = vehicleStr.find_first_of(",}", colon);
+                capacity = stoi(vehicleStr.substr(colon + 1, comma - colon - 1));
+            }
+            
+            vehicles.push_back(Vehicle(id, capacity));
+            vehicleStart = vehicleEnd + 1;
+        }
+    }
+    
+    return vehicles;
+}
+
+// Save results to JSON file
+void saveResultsToJSON(const string& filename,
+                      const vector<Vehicle>& vehicles,
+                      const Graph& graph) {
+    ofstream file(filename);
+    if (!file.is_open()) {
+        cerr << "Cannot create file: " << filename << endl;
+        return;
+    }
+    
+    file << "{\n";
+    file << "  \"routes\": {\n";
+    
+    // Write routes for each vehicle
+    for (int i = 0; i < (int)vehicles.size(); i++) {
+        const Vehicle& vehicle = vehicles[i];
+        file << "    \"" << vehicle.id << "\": [";
+        
+        for (int j = 0; j < (int)vehicle.route.size(); j++) {
+            file << vehicle.route[j];
+            if (j < vehicle.route.size() - 1) file << ", ";
+        }
+        file << "]";
+        
+        if (i < vehicles.size() - 1) file << ",";
+        file << "\n";
+    }
+    
+    file << "  },\n";
+    file << "  \"costs\": {\n";
+    
+    // Write cost breakdown for each vehicle
+    for (int i = 0; i < (int)vehicles.size(); i++) {
+        const Vehicle& vehicle = vehicles[i];
+        RouteCost cost = calculateRouteCost(graph, vehicle.route, 
+                                           vehicle.capacity, vehicle.currentLoad);
+        
+        file << "    \"" << vehicle.id << "\": {\n";
+        file << "      \"total_time\": " << fixed << setprecision(2) 
+             << cost.totalTime << ",\n";
+        file << "      \"reliability_penalty\": " << cost.reliabilityPenalty << ",\n";
+        file << "      \"idle_time\": " << cost.idleTime << ",\n";
+        file << "      \"final_score\": " << cost.finalScore << "\n";
+        file << "    }";
+        
+        if (i < vehicles.size() - 1) file << ",";
+        file << "\n";
+    }
+    
+    file << "  }\n";
+    file << "}\n";
+    file.close();
+}
+
+int main() {
     try {
-        if (argc > 1) {
-            string command = argv[1];
-            if (command == "sample") solveSampleProblem();
-            else if (command == "benchmark") runScalabilityAnalysis();
-            else if (command == "replan") testDynamicReplanning();
-            else if (command == "all") {
-                solveSampleProblem();
-                runScalabilityAnalysis();
-            }
-            else {
-                cerr << "Unknown command: " << command << endl;
-                cerr << "Usage: " << argv[0] << " [sample|benchmark|replan|all]" << endl;
-                return 1;
-            }
-        } else {
-            interactiveMenu();
+        cout << "========================================" << endl;
+        cout << "Disaster Response Routing System" << endl;
+        cout << "========================================" << endl << endl;
+        
+        // Load input from JSON file
+        cout << "Loading input from input.json..." << endl;
+        Graph graph = loadGraphFromJSON("input.json");
+        vector<Vehicle> vehicles = loadVehiclesFromJSON("input.json");
+        
+        cout << "Graph loaded: " << graph.numNodes() << " nodes, " 
+             << graph.numEdges() << " edges" << endl;
+        cout << "Vehicles: " << vehicles.size() << endl << endl;
+        
+        // Step 1: Allocate vehicles using priority-based greedy algorithm
+        cout << "Step 1: Allocating locations to vehicles..." << endl;
+        vehicles = allocateVehicles(graph, vehicles);
+        
+        // Step 2: Optimize routes using 2-opt
+        cout << "Step 2: Optimizing routes with 2-opt..." << endl;
+        for (auto& vehicle : vehicles) {
+            vehicle.route = twoOpt(graph, vehicle.route);
         }
+        
+        // Step 3: Calculate and display results
+        cout << "Step 3: Calculating costs..." << endl << endl;
+        
+        cout << "========================================" << endl;
+        cout << "SOLUTION" << endl;
+        cout << "========================================" << endl << endl;
+        
+        // Print vehicle assignments
+        cout << "Vehicle Assignments:" << endl;
+        for (const auto& vehicle : vehicles) {
+            cout << "Vehicle " << vehicle.id << ": ";
+            bool first = true;
+            for (int nodeId : vehicle.route) {
+                if (nodeId != 0 || vehicle.route.size() == 1) {
+                    if (!first) cout << " ";
+                    cout << nodeId;
+                    first = false;
+                }
+            }
+            cout << endl;
+        }
+        cout << endl;
+        
+        // Print optimized routes
+        cout << "Optimized Routes:" << endl;
+        for (const auto& vehicle : vehicles) {
+            cout << "Vehicle " << vehicle.id << " route: ";
+            for (int i = 0; i < (int)vehicle.route.size(); i++) {
+                cout << vehicle.route[i];
+                if (i < (int)vehicle.route.size() - 1) cout << " -> ";
+            }
+            cout << endl;
+        }
+        cout << endl;
+        
+        // Print cost breakdown
+        cout << "Cost Breakdown:" << endl;
+        double totalScore = 0.0;
+        for (const auto& vehicle : vehicles) {
+            RouteCost cost = calculateRouteCost(graph, vehicle.route, 
+                                               vehicle.capacity, vehicle.currentLoad);
+            totalScore += cost.finalScore;
+            
+            cout << "Vehicle " << vehicle.id << ":" << endl;
+            cout << "  Time: " << fixed << setprecision(2) 
+                 << cost.totalTime << endl;
+            cout << "  Reliability Penalty: " << setprecision(4) 
+                 << cost.reliabilityPenalty << endl;
+            cout << "  Idle: " << setprecision(2) 
+                 << cost.idleTime << endl;
+            cout << "  Final Score: " << setprecision(4) 
+                 << cost.finalScore << endl;
+        }
+        cout << endl;
+        cout << "Total Score: " << setprecision(4) << totalScore << endl;
+        cout << endl;
+        
+        // Save results to JSON file
+        cout << "Saving results to output.json..." << endl;
+        saveResultsToJSON("output.json", vehicles, graph);
+        
+        cout << "Done!" << endl;
+        
     } catch (const exception& e) {
         cerr << "Error: " << e.what() << endl;
         return 1;
     }
+    
     return 0;
 }
